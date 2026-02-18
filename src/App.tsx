@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import LandingPage from "./components/LandingPage";
 import BirthdayReveal from "./components/BirthdayReveal";
 import FlowerBouquet from "./components/FlowerBouquet";
@@ -6,8 +6,8 @@ import CakePage from "./components/CakePage";
 import FinalWish from "./components/FinalWish";
 
 type Stage =
-  | "unlock" // ✅ tap screen first
-  | "boot"   // ✅ first delay starts AFTER tap
+  | "unlock" // tap screen first
+  | "boot"   // first delay starts AFTER tap
   | "landing"
   | "t1"
   | "reveal"
@@ -16,6 +16,8 @@ type Stage =
   | "t3"
   | "cake"
   | "final";
+
+type MusicMode = "landingShort" | "intro" | "bouquet" | "cake";
 
 function TransitionScreen({
   text,
@@ -143,28 +145,62 @@ function TransitionScreen({
 
 function App() {
   const [stage, setStage] = useState<Stage>("unlock");
+  const [musicMode, setMusicMode] = useState<MusicMode>("landingShort");
 
-  const [musicMode, setMusicMode] = useState<
-    "landingShort" | "intro" | "bouquet" | "cake"
-  >("landingShort");
+  // ✅ One tap unlock for Apple devices
+  const [audioUnlocked, setAudioUnlocked] = useState(false);
 
-  // Start muted until tap (iOS policy)
-  const [muted, setMuted] = useState(true);
+  // ✅ Global audio element
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const LANDING_SHORT_ID = "maHSAImuzH8";
-  const INTRO_SONG_ID = "c968eqcH3c0";
-  const BOUQUET_SONG_ID = "4Oc6PTtcthA"; // ✅ your new bouquet song
-  const CAKE_SONG_ID = "IHVsjOtj278";
+  // ✅ Change these paths if your filenames differ
+  const TRACKS: Record<MusicMode, string> = {
+    landingShort: "/audio/landing.mp3",
+    intro: "/audio/intro.mp3",
+    bouquet: "/audio/bouquet.mp3",
+    cake: "/audio/cake.mp3",
+  };
 
-  const mkYtLoop = (id: string, mute: boolean) =>
-    `https://www.youtube.com/embed/${id}` +
-    `?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1` +
-    `&playsinline=1&rel=0&loop=1&playlist=${id}&mute=${mute ? 1 : 0}`;
+  // --- Helpers
+  const setTrack = (mode: MusicMode) => {
+    const a = audioRef.current;
+    if (!a) return;
 
-  // ✅ Boot -> Landing after a short delay (starts only after tap)
+    const nextSrc = TRACKS[mode];
+    const current = a.getAttribute("data-track") || "";
+
+    if (current !== nextSrc) {
+      a.src = nextSrc;
+      a.setAttribute("data-track", nextSrc);
+    }
+
+    a.loop = true;
+    a.preload = "auto";
+  };
+
+  const tryPlay = async () => {
+    const a = audioRef.current;
+    if (!a) return;
+    try {
+      await a.play();
+    } catch {
+      // iOS will fail play() until unlocked by user gesture
+    }
+  };
+
+  // ✅ Keep audio in sync when musicMode changes (no breaks)
+  useEffect(() => {
+    setTrack(musicMode);
+    if (audioUnlocked) {
+      void tryPlay();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicMode, audioUnlocked]);
+
+  // ✅ Boot -> Landing delay
   useEffect(() => {
     if (stage !== "boot") return;
-    const t = setTimeout(() => setStage("landing"), 4000);
+    const t = setTimeout(() => setStage("landing"), 5000);
     return () => clearTimeout(t);
   }, [stage]);
 
@@ -180,12 +216,18 @@ function App() {
     return () => clearTimeout(t);
   }, [stage]);
 
-  // ✅ Tap once -> unlock sound + start the first delay
-  const unlockAndStart = () => {
-    setMuted(false);
+  // ✅ Tap once -> unlock + start first delay + start landing track
+  const unlockAndStart = async () => {
+    setAudioUnlocked(true);
+    setMusicMode("landingShort"); // landing music starts now
     setStage("boot");
+
+    // start playback within the user gesture (best for iOS)
+    setTrack("landingShort");
+    await tryPlay();
   };
 
+  // Your original flow
   const handleYesClick = () => {
     setMusicMode("intro");
     setStage("t1");
@@ -205,51 +247,10 @@ function App() {
     setStage("final");
   };
 
-  // ✅ Landing song plays from boot -> landing until Yes/No is clicked
-  const shouldPlay =
-    (musicMode === "landingShort" && (stage === "boot" || stage === "landing")) ||
-    (musicMode === "intro" && (stage === "t1" || stage === "reveal")) ||
-    (musicMode === "bouquet" &&
-      (stage === "t2" || stage === "flowers" || stage === "t3")) ||
-    (musicMode === "cake" && (stage === "cake" || stage === "final"));
-
-  const musicId =
-    musicMode === "landingShort"
-      ? LANDING_SHORT_ID
-      : musicMode === "intro"
-      ? INTRO_SONG_ID
-      : musicMode === "bouquet"
-      ? BOUQUET_SONG_ID
-      : CAKE_SONG_ID;
-
-  // ✅ DO NOT key by stage => no restart on transitions
-  const iframeKey = `${musicMode}-${muted ? 1 : 0}`;
-
-  // ✅ During landingShort: use muted state; other songs: unmuted
-  const musicSrc = mkYtLoop(musicId, musicMode === "landingShort" ? muted : false);
-
   return (
     <div className="min-h-screen relative">
-      {/* ✅ Global music player (iOS-friendly: tiny, barely visible, not offscreen) */}
-      {shouldPlay && (
-        <iframe
-          key={iframeKey}
-          src={musicSrc}
-          title="Background music"
-          allow="autoplay; encrypted-media"
-          referrerPolicy="strict-origin-when-cross-origin"
-          style={{
-            position: "fixed",
-            right: 8,
-            bottom: 8,
-            width: 160,
-            height: 90,
-            opacity: 0.01,
-            pointerEvents: "none",
-            border: 0,
-          }}
-        />
-      )}
+      {/* ✅ Global audio (single instance, no breaking) */}
+      <audio ref={audioRef} playsInline />
 
       {/* ✅ Tap screen first (boot begins AFTER tap) */}
       {stage === "unlock" && (
@@ -266,6 +267,7 @@ function App() {
             alignItems: "center",
             justifyContent: "center",
             cursor: "pointer",
+            padding: 16,
           }}
         >
           <div
@@ -288,7 +290,7 @@ function App() {
         </div>
       )}
 
-      {/* ✅ First delay screen */}
+      {/* ✅ First delay screen (landing music already playing) */}
       {stage === "boot" && (
         <TransitionScreen
           seconds={6}
@@ -314,7 +316,7 @@ function App() {
           seconds={5}
           text={
             <>
-              you really wanna know? don't worry
+              you really wanna know? don&apos;t worry
               <br />
               Main Hoon Na!!!
             </>
@@ -344,7 +346,7 @@ function App() {
           seconds={5}
           text={
             <>
-              btw, what's a birthday without a cake
+              btw, what&apos;s a birthday without a cake
               <br />
               and without birthday wish??
             </>
