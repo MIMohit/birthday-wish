@@ -281,8 +281,8 @@ function App() {
               the surprise is loading…
               <br /> 
               have some patience, senorita!
-              <p className="mt-10 text-sm text-gray-600 italic">
-                (Hint: Increase the volume! ✨)
+              <p className="mt-12 text-sm text-gray-600 italic">
+                (ps. Increase the volume! ✨)
               </p>
             </>
           }
@@ -326,7 +326,7 @@ function App() {
           seconds={5}
           text={
             <>
-              btw, what is a birthday without a cake
+              btw, what's a birthday without a cake
               <br />
               and without birthday wish??
             </>
