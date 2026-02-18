@@ -6,8 +6,8 @@ import CakePage from "./components/CakePage";
 import FinalWish from "./components/FinalWish";
 
 type Stage =
-  | "unlock" // ✅ user taps play once here (iOS-friendly)
-  | "boot"
+  | "unlock" // ✅ tap screen first
+  | "boot"   // ✅ first delay starts AFTER tap
   | "landing"
   | "t1"
   | "reveal"
@@ -74,7 +74,10 @@ function TransitionScreen({
         </div>
 
         <div className="progress-container mt-7">
-          <div className="progress-bar" style={{ animationDuration: `${seconds}s` }} />
+          <div
+            className="progress-bar"
+            style={{ animationDuration: `${seconds}s` }}
+          />
         </div>
       </div>
 
@@ -145,36 +148,27 @@ function App() {
     "landingShort" | "intro" | "bouquet" | "cake"
   >("landingShort");
 
-  // For iOS: start unmuted is fine once user presses play on the player itself
-  const [muted, setMuted] = useState(false);
-
-  // Controls ONLY for unlock stage (so user can press ▶)
-  const showPlayerControls = stage === "unlock";
-
-  // Player “visibility mode”: big on unlock, tiny afterward (but still on-screen)
-  const playerIsBig = stage === "unlock";
+  // Start muted until tap (iOS policy)
+  const [muted, setMuted] = useState(true);
 
   const LANDING_SHORT_ID = "maHSAImuzH8";
   const INTRO_SONG_ID = "c968eqcH3c0";
-  const BOUQUET_SONG_ID = "4Oc6PTtcthA";
+  const BOUQUET_SONG_ID = "4Oc6PTtcthA"; // ✅ your new bouquet song
   const CAKE_SONG_ID = "IHVsjOtj278";
 
-  const mkYtLoop = (id: string, mute: boolean, controls: boolean) =>
+  const mkYtLoop = (id: string, mute: boolean) =>
     `https://www.youtube.com/embed/${id}` +
-    `?autoplay=1` +
-    `&controls=${controls ? 1 : 0}` +
-    `&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1` +
-    `&playsinline=1&rel=0&loop=1&playlist=${id}` +
-    `&mute=${mute ? 1 : 0}`;
+    `?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1` +
+    `&playsinline=1&rel=0&loop=1&playlist=${id}&mute=${mute ? 1 : 0}`;
 
-  // ✅ boot -> landing delay
+  // ✅ Boot -> Landing after a short delay (starts only after tap)
   useEffect(() => {
     if (stage !== "boot") return;
     const t = setTimeout(() => setStage("landing"), 4000);
     return () => clearTimeout(t);
   }, [stage]);
 
-  // ✅ other delays auto-advance
+  // ✅ Other transitions auto-advance
   useEffect(() => {
     let next: Stage | null = null;
     if (stage === "t1") next = "reveal";
@@ -186,10 +180,9 @@ function App() {
     return () => clearTimeout(t);
   }, [stage]);
 
-  // User flow
-  const handleContinueAfterPlay = () => {
-    // After user taps ▶ on the visible player, they click Continue:
-    // start the first delay screen
+  // ✅ Tap once -> unlock sound + start the first delay
+  const unlockAndStart = () => {
+    setMuted(false);
     setStage("boot");
   };
 
@@ -212,12 +205,12 @@ function App() {
     setStage("final");
   };
 
-  // ✅ landingShort plays from unlock -> boot -> landing until Yes/No
+  // ✅ Landing song plays from boot -> landing until Yes/No is clicked
   const shouldPlay =
-    (musicMode === "landingShort" &&
-      (stage === "unlock" || stage === "boot" || stage === "landing")) ||
+    (musicMode === "landingShort" && (stage === "boot" || stage === "landing")) ||
     (musicMode === "intro" && (stage === "t1" || stage === "reveal")) ||
-    (musicMode === "bouquet" && (stage === "t2" || stage === "flowers" || stage === "t3")) ||
+    (musicMode === "bouquet" &&
+      (stage === "t2" || stage === "flowers" || stage === "t3")) ||
     (musicMode === "cake" && (stage === "cake" || stage === "final"));
 
   const musicId =
@@ -229,15 +222,15 @@ function App() {
       ? BOUQUET_SONG_ID
       : CAKE_SONG_ID;
 
-  // IMPORTANT: keep key stable across stage changes to avoid restarts
-  // Only change when musicMode changes (and when controls toggle on unlock).
-  const iframeKey = `${musicMode}-${showPlayerControls ? 1 : 0}-${muted ? 1 : 0}`;
+  // ✅ DO NOT key by stage => no restart on transitions
+  const iframeKey = `${musicMode}-${muted ? 1 : 0}`;
 
-  const musicSrc = mkYtLoop(musicId, muted, showPlayerControls);
+  // ✅ During landingShort: use muted state; other songs: unmuted
+  const musicSrc = mkYtLoop(musicId, musicMode === "landingShort" ? muted : false);
 
   return (
     <div className="min-h-screen relative">
-      {/* ✅ Global player (iOS-friendly: always on-screen, never offscreen) */}
+      {/* ✅ Global music player (iOS-friendly: tiny, barely visible, not offscreen) */}
       {shouldPlay && (
         <iframe
           key={iframeKey}
@@ -247,25 +240,23 @@ function App() {
           referrerPolicy="strict-origin-when-cross-origin"
           style={{
             position: "fixed",
-            right: 12,
-            bottom: 12,
-            width: playerIsBig ? 340 : 160,
-            height: playerIsBig ? 190 : 90,
-            opacity: playerIsBig ? 1 : 0.08, // tiny but not “invisible” for iOS
-            pointerEvents: playerIsBig ? "auto" : "none",
+            right: 8,
+            bottom: 8,
+            width: 160,
+            height: 90,
+            opacity: 0.01,
+            pointerEvents: "none",
             border: 0,
-            borderRadius: 18,
-            boxShadow: playerIsBig ? "0 18px 50px rgba(0,0,0,.28)" : "none",
-            zIndex: 9998,
-            transition: "all 350ms ease",
-            background: "transparent",
           }}
         />
       )}
 
-      {/* ✅ Unlock screen with visible player & Continue button */}
+      {/* ✅ Tap screen first (boot begins AFTER tap) */}
       {stage === "unlock" && (
         <div
+          onClick={unlockAndStart}
+          role="button"
+          aria-label="Tap to start"
           style={{
             position: "fixed",
             inset: 0,
@@ -274,72 +265,30 @@ function App() {
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            padding: 16,
+            cursor: "pointer",
           }}
         >
           <div
             style={{
-              width: "min(720px, 96vw)",
-              borderRadius: 28,
-              padding: 22,
-              background: "rgba(255,255,255,.45)",
-              border: "1px solid rgba(255,255,255,.65)",
-              backdropFilter: "blur(14px)",
-              boxShadow: "0 18px 50px rgba(0,0,0,.18)",
+              background: "rgba(255,255,255,0.45)",
+              padding: "28px 34px",
+              borderRadius: "24px",
+              backdropFilter: "blur(12px)",
               textAlign: "center",
+              color: "#be185d",
+              boxShadow: "0 18px 50px rgba(0,0,0,.18)",
+              border: "1px solid rgba(255,255,255,.55)",
+              maxWidth: "min(520px, 92vw)",
             }}
           >
-            <div
-              style={{
-                fontSize: "1.6rem",
-                fontWeight: 900,
-                color: "#be185d",
-              }}
-            >
-              hey hey, before we start…  🎉
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: "1.05rem",
-                fontWeight: 700,
-                color: "rgba(190,24,93,.9)",
-                lineHeight: 1.35,
-              }}
-            >
-              Tap the ▶ on the little player at the bottom-right once,
-              <br />
-              then press <b>Continue</b>.
-            </div>
-
-            <button
-              onClick={handleContinueAfterPlay}
-              style={{
-                marginTop: 16,
-                padding: "14px 22px",
-                borderRadius: 999,
-                border: "1px solid rgba(255,255,255,.6)",
-                background:
-                  "linear-gradient(135deg, rgba(236,72,153,.95), rgba(244,63,94,.92))",
-                color: "white",
-                fontWeight: 900,
-                fontSize: "1.05rem",
-                boxShadow: "0 16px 40px rgba(236,72,153,.25)",
-                cursor: "pointer",
-              }}
-            >
-              Continue ✨
-            </button>
-
-            <div style={{ marginTop: 10, fontSize: ".92rem", opacity: 0.75, color: "#9d174d" }}>
-              (After this, you won’t need to tap again.)
+            <div style={{ fontSize: "1.7rem", fontWeight: 900 }}>
+              🎵 Tap to start the magic
             </div>
           </div>
         </div>
       )}
 
-      {/* boot delay (starts after Continue) */}
+      {/* ✅ First delay screen */}
       {stage === "boot" && (
         <TransitionScreen
           seconds={6}
@@ -395,7 +344,7 @@ function App() {
           seconds={5}
           text={
             <>
-              btw, what is a birthday without a cake
+              btw, what's a birthday without a cake
               <br />
               and without birthday wish??
             </>
