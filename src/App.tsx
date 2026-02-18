@@ -6,7 +6,8 @@ import CakePage from "./components/CakePage";
 import FinalWish from "./components/FinalWish";
 
 type Stage =
-  | "boot" // ✅ new delay before landing
+  | "unlock" // ✅ tap screen first
+  | "boot"   // ✅ first delay starts AFTER tap
   | "landing"
   | "t1"
   | "reveal"
@@ -141,20 +142,18 @@ function TransitionScreen({
 }
 
 function App() {
-  // ✅ start from boot (delay before landing)
-  const [stage, setStage] = useState<Stage>("boot");
+  const [stage, setStage] = useState<Stage>("unlock");
 
-  // ✅ keep your same music timeline
   const [musicMode, setMusicMode] = useState<
     "landingShort" | "intro" | "bouquet" | "cake"
   >("landingShort");
 
-  // ✅ landing track starts muted (autoplay allowed)
+  // Start muted until tap (iOS policy)
   const [muted, setMuted] = useState(true);
 
   const LANDING_SHORT_ID = "maHSAImuzH8";
   const INTRO_SONG_ID = "c968eqcH3c0";
-  const BOUQUET_SONG_ID = "4Oc6PTtcthA";
+  const BOUQUET_SONG_ID = "4Oc6PTtcthA"; // ✅ your new bouquet song
   const CAKE_SONG_ID = "IHVsjOtj278";
 
   const mkYtLoop = (id: string, mute: boolean) =>
@@ -162,14 +161,14 @@ function App() {
     `?autoplay=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&modestbranding=1` +
     `&playsinline=1&rel=0&loop=1&playlist=${id}&mute=${mute ? 1 : 0}`;
 
-  // ✅ boot -> landing after a short delay (like other delays)
+  // ✅ Boot -> Landing after a short delay (starts only after tap)
   useEffect(() => {
     if (stage !== "boot") return;
-    const t = setTimeout(() => setStage("landing"), 6000);
+    const t = setTimeout(() => setStage("landing"), 4000);
     return () => clearTimeout(t);
   }, [stage]);
 
-  // ✅ existing transitions auto-advance
+  // ✅ Other transitions auto-advance
   useEffect(() => {
     let next: Stage | null = null;
     if (stage === "t1") next = "reveal";
@@ -181,36 +180,23 @@ function App() {
     return () => clearTimeout(t);
   }, [stage]);
 
-  // ✅ On first user interaction anywhere, unmute landing track
-  useEffect(() => {
-    const unlock = () => {
-      setMuted(false);
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-    window.addEventListener("pointerdown", unlock);
-    window.addEventListener("keydown", unlock);
-    return () => {
-      window.removeEventListener("pointerdown", unlock);
-      window.removeEventListener("keydown", unlock);
-    };
-  }, []);
+  // ✅ Tap once -> unlock sound + start the first delay
+  const unlockAndStart = () => {
+    setMuted(false);
+    setStage("boot");
+  };
 
   const handleYesClick = () => {
-    // ✅ landing track ends here; intro starts
-    setMuted(false);
     setMusicMode("intro");
     setStage("t1");
   };
 
   const handleClickMe = () => {
-    setMuted(false);
     setMusicMode("bouquet");
     setStage("t2");
   };
 
   const handleCakeTime = () => {
-    setMuted(false);
     setMusicMode("cake");
     setStage("t3");
   };
@@ -219,11 +205,12 @@ function App() {
     setStage("final");
   };
 
-  // ✅ landing track plays from boot -> landing (until yes/no)
+  // ✅ Landing song plays from boot -> landing until Yes/No is clicked
   const shouldPlay =
     (musicMode === "landingShort" && (stage === "boot" || stage === "landing")) ||
     (musicMode === "intro" && (stage === "t1" || stage === "reveal")) ||
-    (musicMode === "bouquet" && (stage === "t2" || stage === "flowers" || stage === "t3")) ||
+    (musicMode === "bouquet" &&
+      (stage === "t2" || stage === "flowers" || stage === "t3")) ||
     (musicMode === "cake" && (stage === "cake" || stage === "final"));
 
   const musicId =
@@ -235,42 +222,73 @@ function App() {
       ? BOUQUET_SONG_ID
       : CAKE_SONG_ID;
 
-  // ✅ key does not include stage => no restart on delays
+  // ✅ DO NOT key by stage => no restart on transitions
   const iframeKey = `${musicMode}-${muted ? 1 : 0}`;
+
+  // ✅ During landingShort: use muted state; other songs: unmuted
   const musicSrc = mkYtLoop(musicId, musicMode === "landingShort" ? muted : false);
 
   return (
     <div className="min-h-screen relative">
-      {/* Global music player */}
+      {/* ✅ Global music player (iOS-friendly: tiny, barely visible, not offscreen) */}
       {shouldPlay && (
-        <div
-          aria-hidden="true"
+        <iframe
+          key={iframeKey}
+          src={musicSrc}
+          title="Background music"
+          allow="autoplay; encrypted-media"
+          referrerPolicy="strict-origin-when-cross-origin"
           style={{
-            position: "absolute",
-            inset: 0,
+            position: "fixed",
+            right: 8,
+            bottom: 8,
+            width: 160,
+            height: 90,
+            opacity: 0.01,
             pointerEvents: "none",
-            opacity: 0.0001,
+            border: 0,
+          }}
+        />
+      )}
+
+      {/* ✅ Tap screen first (boot begins AFTER tap) */}
+      {stage === "unlock" && (
+        <div
+          onClick={unlockAndStart}
+          role="button"
+          aria-label="Tap to start"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "linear-gradient(135deg,#fbcfe8,#fda4af)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
           }}
         >
-          <iframe
-            key={iframeKey}
-            src={musicSrc}
-            title="Background music"
-            allow="autoplay; encrypted-media"
-            referrerPolicy="strict-origin-when-cross-origin"
+          <div
             style={{
-              width: 1,
-              height: 1,
-              position: "absolute",
-              left: -9999,
-              top: -9999,
-              border: 0,
+              background: "rgba(255,255,255,0.45)",
+              padding: "28px 34px",
+              borderRadius: "24px",
+              backdropFilter: "blur(12px)",
+              textAlign: "center",
+              color: "#be185d",
+              boxShadow: "0 18px 50px rgba(0,0,0,.18)",
+              border: "1px solid rgba(255,255,255,.55)",
+              maxWidth: "min(520px, 92vw)",
             }}
-          />
+          >
+            <div style={{ fontSize: "1.7rem", fontWeight: 900 }}>
+              🎵 Tap to start the magic
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ✅ NEW delay before landing */}
+      {/* ✅ First delay screen */}
       {stage === "boot" && (
         <TransitionScreen
           seconds={6}
@@ -279,7 +297,7 @@ function App() {
               waittttt… 💗
               <br />
               the surprise is loading…
-              <br /> 
+              <br />
               have some patience, senorita!
               <p className="mt-12 text-sm text-gray-600 italic">
                 (ps. Increase the volume! ✨)
